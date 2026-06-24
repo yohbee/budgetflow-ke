@@ -1,0 +1,8 @@
+{
+  "appId": "com.budgetflow.ke",
+  "appName": "BudgetFlowKE",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
