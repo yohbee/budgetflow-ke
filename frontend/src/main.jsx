@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { PieChart, Pie, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import './style.css';
 
-const API =  'http://192.168.100.5:5000/api';
+const API = 'https://budgetflow-ke.onrender.com/api';
 const labels = {
   groceries: 'Groceries', fare: 'Fare', food: 'Food', airtime: 'Airtime',
   longTermSavings: 'Long-term savings', emergencyFund: 'Emergency fund', shortTermSavings: 'Short-term savings'
