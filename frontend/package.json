@@ -13,13 +13,14 @@
     "android:sync": "npm run build && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "latest",
+    "@capacitor/core": "latest",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "firebase": "^12.15.0",
     "react": "latest",
     "react-dom": "latest",
     "recharts": "latest",
-    "@capacitor/core": "latest",
-    "@capacitor/android": "latest"
+    "vite": "latest"
   },
   "devDependencies": {
     "@capacitor/cli": "latest"

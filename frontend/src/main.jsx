@@ -1,110 +1,276 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PieChart, Pie, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
+import { BarChart, Bar, Tooltip, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  setDoc,
+  getDoc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { db } from './firebase';
 import './style.css';
 
-const API = 'https://budgetflow-ke.onrender.com/api';
-const labels = {
-  groceries: 'Groceries', fare: 'Fare', food: 'Food', airtime: 'Airtime',
-  longTermSavings: 'Long-term savings', emergencyFund: 'Emergency fund', shortTermSavings: 'Short-term savings'
-};
+const USER_ID = 'demoUser';
+
+const defaultCategories = [
+  { name: 'Groceries', limit: 250 },
+  { name: 'Fare', limit: 250 },
+  { name: 'Food', limit: 500 },
+  { name: 'Airtime', limit: 140 },
+  { name: 'Long-term savings', limit: 500 },
+  { name: 'Emergency fund', limit: 360 },
+  { name: 'Short-term savings', limit: 500 }
+];
 
 function App() {
-  const [data, setData] = useState(null);
-  const [form, setForm] = useState({ amount: '', category: 'food', note: '' });
-  const [sms, setSms] = useState('MPESA Confirmed. Ksh100 paid to KIBANDA FOOD on 24/6/26.');
+  const [settings, setSettings] = useState({ totalBudget: 3000 });
+  const [categories, setCategories] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [form, setForm] = useState({ amount: '', categoryId: '', note: '' });
+  const [newCategory, setNewCategory] = useState({ name: '', limit: '' });
 
-  async function load() {
-    const res = await fetch(`${API}/budget`);
-    setData(await res.json());
+  const settingsRef = doc(db, 'users', USER_ID, 'settings', 'main');
+  const categoriesRef = collection(db, 'users', USER_ID, 'categories');
+  const transactionsRef = collection(db, 'users', USER_ID, 'transactions');
+
+  useEffect(() => {
+    async function setup() {
+      const settingsSnap = await getDoc(settingsRef);
+
+      if (!settingsSnap.exists()) {
+        await setDoc(settingsRef, { totalBudget: 3000 });
+      }
+
+      const unsubSettings = onSnapshot(settingsRef, snap => {
+        if (snap.exists()) setSettings(snap.data());
+      });
+
+      const unsubCategories = onSnapshot(categoriesRef, snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setCategories(list);
+
+        if (list.length === 0) {
+          defaultCategories.forEach(c => addDoc(categoriesRef, c));
+        }
+
+        if (!form.categoryId && list.length > 0) {
+          setForm(f => ({ ...f, categoryId: list[0].id }));
+        }
+      });
+
+      const unsubTransactions = onSnapshot(transactionsRef, snap => {
+        setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+
+      return () => {
+        unsubSettings();
+        unsubCategories();
+        unsubTransactions();
+      };
+    }
+
+    setup();
+  }, []);
+
+  const summary = useMemo(() => {
+    const spentByCategory = {};
+
+    transactions.forEach(t => {
+      spentByCategory[t.categoryId] = (spentByCategory[t.categoryId] || 0) + Number(t.amount || 0);
+    });
+
+    const totalUsed = transactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const totalBudget = Number(settings.totalBudget || 0);
+
+    return {
+      spentByCategory,
+      totalUsed,
+      totalBudget,
+      remaining: totalBudget - totalUsed
+    };
+  }, [transactions, settings]);
+
+  const chartData = categories.map(c => ({
+    name: c.name,
+    used: summary.spentByCategory[c.id] || 0,
+    max: Number(c.limit || 0)
+  }));
+
+  async function updateTotalBudget(e) {
+    e.preventDefault();
+    await updateDoc(settingsRef, { totalBudget: Number(settings.totalBudget || 0) });
   }
-  useEffect(() => { load(); }, []);
+
+  async function addCategory(e) {
+    e.preventDefault();
+    if (!newCategory.name || !newCategory.limit) return;
+
+    await addDoc(categoriesRef, {
+      name: newCategory.name,
+      limit: Number(newCategory.limit)
+    });
+
+    setNewCategory({ name: '', limit: '' });
+  }
+
+  async function editCategory(id, field, value) {
+    await updateDoc(doc(db, 'users', USER_ID, 'categories', id), {
+      [field]: field === 'limit' ? Number(value || 0) : value
+    });
+  }
+
+  async function deleteCategory(id) {
+    await deleteDoc(doc(db, 'users', USER_ID, 'categories', id));
+  }
 
   async function addTransaction(e) {
     e.preventDefault();
-    await fetch(`${API}/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    setForm({ amount: '', category: 'food', note: '' });
-    load();
+    if (!form.amount || !form.categoryId) return;
+
+    await addDoc(transactionsRef, {
+      amount: Number(form.amount),
+      categoryId: form.categoryId,
+      note: form.note,
+      createdAt: serverTimestamp()
+    });
+
+    setForm({ amount: '', categoryId: categories[0]?.id || '', note: '' });
   }
 
-  async function testSms() {
-    await fetch(`${API}/sms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: 'MPESA', message: sms }) });
-    load();
+  async function removeTransaction(id) {
+    await deleteDoc(doc(db, 'users', USER_ID, 'transactions', id));
   }
 
-  async function remove(id) {
-    await fetch(`${API}/transactions/${id}`, { method: 'DELETE' });
-    load();
-  }
+  return (
+    <main>
+      <header>
+        <h1>BudgetFlow KE</h1>
+        <p>Track, edit, and manage your money flow online.</p>
+      </header>
 
-  const chartData = useMemo(() => {
-    if (!data) return [];
-    return Object.entries(data.budgets).map(([key, max]) => ({ name: labels[key], used: data.summary.spentByCategory[key] || 0, max }));
-  }, [data]);
+      <section className="cards">
+        <Card title="Total Budget" value={`KSh ${summary.totalBudget}`} />
+        <Card title="Used" value={`KSh ${summary.totalUsed}`} />
+        <Card title="Remaining" value={`KSh ${summary.remaining}`} danger={summary.remaining < 0} />
+      </section>
 
-  if (!data) return <main><h1>Loading...</h1></main>;
+      <section className="grid">
+        <div className="panel">
+          <h2>Budget Settings</h2>
+          <form onSubmit={updateTotalBudget}>
+            <input
+              type="number"
+              value={settings.totalBudget}
+              onChange={e => setSettings({ ...settings, totalBudget: e.target.value })}
+              placeholder="Total budget"
+            />
+            <button>Save Total Budget</button>
+          </form>
+        </div>
 
-  return <main>
-    <header>
-      <h1>BudgetFlow KE</h1>
-      <p>Track your KSh 3,000 budget and understand your money flow.</p>
-    </header>
+        <div className="panel">
+          <h2>Add Category</h2>
+          <form onSubmit={addCategory}>
+            <input
+              placeholder="Category name"
+              value={newCategory.name}
+              onChange={e => setNewCategory({ ...newCategory, name: e.target.value })}
+            />
+            <input
+              type="number"
+              placeholder="Limit"
+              value={newCategory.limit}
+              onChange={e => setNewCategory({ ...newCategory, limit: e.target.value })}
+            />
+            <button>Add Category</button>
+          </form>
+        </div>
+      </section>
 
-    <section className="cards">
-      <Card title="Total Budget" value={`KSh ${data.summary.totalBudget}`} />
-      <Card title="Used" value={`KSh ${data.summary.totalUsed}`} />
-      <Card title="Remaining" value={`KSh ${data.summary.remaining}`} danger={data.summary.remaining < 0} />
-    </section>
+      <section className="panel">
+        <h2>Edit Categories</h2>
+        {categories.map(c => (
+          <div className="tx" key={c.id}>
+            <input value={c.name} onChange={e => editCategory(c.id, 'name', e.target.value)} />
+            <input type="number" value={c.limit} onChange={e => editCategory(c.id, 'limit', e.target.value)} />
+            <button onClick={() => deleteCategory(c.id)}>Delete</button>
+          </div>
+        ))}
+      </section>
 
-    <section className="grid">
-      <div className="panel">
-        <h2>Add spending/saving</h2>
-        <form onSubmit={addTransaction}>
-          <input type="number" placeholder="Amount" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
-          <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-            {Object.entries(labels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <input placeholder="Note" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
-          <button>Add</button>
-        </form>
-      </div>
+      <section className="grid">
+        <div className="panel">
+          <h2>Add Transaction</h2>
+          <form onSubmit={addTransaction}>
+            <input
+              type="number"
+              placeholder="Amount"
+              value={form.amount}
+              onChange={e => setForm({ ...form, amount: e.target.value })}
+            />
+            <select
+              value={form.categoryId}
+              onChange={e => setForm({ ...form, categoryId: e.target.value })}
+            >
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <input
+              placeholder="Note"
+              value={form.note}
+              onChange={e => setForm({ ...form, note: e.target.value })}
+            />
+            <button>Add</button>
+          </form>
+        </div>
 
-      <div className="panel">
-        <h2>Test SMS Forwarder</h2>
-        <textarea value={sms} onChange={e => setSms(e.target.value)} />
-        <button onClick={testSms}>Send SMS to webhook</button>
-      </div>
-    </section>
+        <div className="panel">
+          <h2>Category Flow</h2>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData}>
+              <XAxis dataKey="name" hide />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="used" />
+              <Bar dataKey="max" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
 
-    <section className="grid">
-      <div className="panel">
-        <h2>Category flow</h2>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartData}><XAxis dataKey="name" hide /><YAxis /><Tooltip /><Bar dataKey="used" /><Bar dataKey="max" /></BarChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="panel">
-        <h2>AI Coach</h2>
-        {data.advice.map((a, i) => <p className="advice" key={i}>{a}</p>)}
-      </div>
-    </section>
-
-    <section className="panel">
-      <h2>Budget categories</h2>
-      <div className="budgets">
-        {chartData.map(c => <div key={c.name} className="budget-row"><span>{c.name}</span><strong>KSh {c.used} / {c.max}</strong></div>)}
-      </div>
-    </section>
-
-    <section className="panel">
-      <h2>Transactions</h2>
-      {data.transactions.length === 0 ? <p>No transactions yet.</p> : data.transactions.map(t => <div className="tx" key={t.id}>
-        <div><strong>KSh {t.amount}</strong> — {labels[t.category]}<br /><small>{t.note || t.rawMessage}</small></div>
-        <button onClick={() => remove(t.id)}>Delete</button>
-      </div>)}
-    </section>
-  </main>;
+      <section className="panel">
+        <h2>Transactions</h2>
+        {transactions.length === 0 ? <p>No transactions yet.</p> : transactions.map(t => {
+          const cat = categories.find(c => c.id === t.categoryId);
+          return (
+            <div className="tx" key={t.id}>
+              <div>
+                <strong>KSh {t.amount}</strong> — {cat?.name || 'Unknown'}
+                <br />
+                <small>{t.note}</small>
+              </div>
+              <button onClick={() => removeTransaction(t.id)}>Delete</button>
+            </div>
+          );
+        })}
+      </section>
+    </main>
+  );
 }
 
-function Card({ title, value, danger }) { return <div className={danger ? 'card danger' : 'card'}><span>{title}</span><strong>{value}</strong></div>; }
+function Card({ title, value, danger }) {
+  return (
+    <div className={danger ? 'card danger' : 'card'}>
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
 createRoot(document.getElementById('root')).render(<App />);
