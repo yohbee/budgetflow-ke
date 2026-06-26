@@ -61,7 +61,7 @@ export function listenTransactions(userId, callback) {
 }
 
 export function updateSettings(userId, data) {
-  return updateDoc(userDoc(userId, 'settings', 'main'), data);
+  return setDoc(userDoc(userId, 'settings', 'main'), data, { merge: true });
 }
 
 export function addCategory(userId, category) {
