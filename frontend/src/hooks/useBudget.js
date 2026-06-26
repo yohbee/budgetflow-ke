@@ -56,3 +56,4 @@ export function useBudget(user) {
   }, [transactions, settings]);
 
   return { loading, settings, setSettings, categories, transactions, summary };
+}
