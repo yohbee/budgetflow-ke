@@ -15,13 +15,12 @@ export default function TransactionForm({ user, categories }) {
     amount: "",
     type: "expense",
     categoryId: "",
+    customCategory: "",
     note: ""
   });
 
   const availableCategories = useMemo(() => {
-    if (form.type === "income") {
-      return incomeCategories;
-    }
+    if (form.type === "income") return incomeCategories;
 
     if (form.type === "savings") {
       return categories.filter(c =>
@@ -36,23 +35,35 @@ export default function TransactionForm({ user, categories }) {
     );
   }, [form.type, categories]);
 
+  const selectedCategory = availableCategories.find(
+    c => c.id === form.categoryId
+  );
+
+  const showCustomCategory =
+    form.categoryId === "other_income" ||
+    selectedCategory?.name?.toLowerCase().includes("other");
+
   async function submit(e) {
     e.preventDefault();
 
     if (!form.amount) return;
 
+    if (showCustomCategory && !form.customCategory.trim()) {
+      alert("Please specify the category.");
+      return;
+    }
+
     await addTransaction(user.uid, {
       ...form,
-      categoryId:
-        form.categoryId ||
-        availableCategories[0]?.id ||
-        ""
+      categoryId: form.categoryId || availableCategories[0]?.id || "",
+      customCategory: showCustomCategory ? form.customCategory.trim() : ""
     });
 
     setForm({
       amount: "",
       type: "expense",
       categoryId: "",
+      customCategory: "",
       note: ""
     });
   }
@@ -63,9 +74,7 @@ export default function TransactionForm({ user, categories }) {
         type="number"
         placeholder="Amount"
         value={form.amount}
-        onChange={e =>
-          setForm({ ...form, amount: e.target.value })
-        }
+        onChange={e => setForm({ ...form, amount: e.target.value })}
       />
 
       <select
@@ -74,7 +83,8 @@ export default function TransactionForm({ user, categories }) {
           setForm({
             ...form,
             type: e.target.value,
-            categoryId: ""
+            categoryId: "",
+            customCategory: ""
           })
         }
       >
@@ -88,7 +98,8 @@ export default function TransactionForm({ user, categories }) {
         onChange={e =>
           setForm({
             ...form,
-            categoryId: e.target.value
+            categoryId: e.target.value,
+            customCategory: ""
           })
         }
       >
@@ -99,12 +110,27 @@ export default function TransactionForm({ user, categories }) {
         ))}
       </select>
 
+      {showCustomCategory && (
+        <input
+          type="text"
+          placeholder={
+            form.type === "income"
+              ? "Specify income source"
+              : form.type === "savings"
+              ? "Specify savings goal"
+              : "Specify expense category"
+          }
+          value={form.customCategory}
+          onChange={e =>
+            setForm({ ...form, customCategory: e.target.value })
+          }
+        />
+      )}
+
       <input
         placeholder="Description"
         value={form.note}
-        onChange={e =>
-          setForm({ ...form, note: e.target.value })
-        }
+        onChange={e => setForm({ ...form, note: e.target.value })}
       />
 
       <button>Add Transaction</button>
