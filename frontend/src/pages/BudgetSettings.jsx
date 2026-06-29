@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import CategoryEditor from '../components/CategoryEditor';
 import { updateSettings } from '../services/firestore';
 
-export default function BudgetSettings({ user, settings, setSettings, categories }) {
+export default function BudgetSettings({ user, settings, setSettings, categories, summary }) {
   const [totalBudget, setTotalBudget] = useState('');
   const [currency, setCurrency] = useState('KES');
   const [status, setStatus] = useState('');
@@ -64,7 +64,12 @@ export default function BudgetSettings({ user, settings, setSettings, categories
 
       <div className="panel wide">
         <h2>Categories</h2>
-        <CategoryEditor user={user} categories={categories} />
+        <CategoryEditor
+    user={user}
+    categories={categories}
+    summary={summary}
+    currency={settings.currency || 'KES'}
+  />
       </div>
     </section>
   );
